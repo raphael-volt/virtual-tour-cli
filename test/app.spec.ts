@@ -5,7 +5,7 @@ import * as env from "dotenv"
 import { join } from "path";
 import { readJson, remove } from "fs-extra";
 
-env.config({path: __dirname})
+env.config({path: join(__dirname, ".env")})
 
 import { Carousel } from "../src/core/carousel";
 import { Video } from "../src/core/video";
