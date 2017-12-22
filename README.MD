@@ -70,7 +70,7 @@ Based on the `config.json` with options values.
 
 Path to directories must be relative. 
 
-Options values will be removed from the generated config file, all other properties will be added. 
+Options values will be removed from the generated config file, all other properties will be kept. 
 
 Only `src` values must be defined for `carousel`, `turnAround` and `buildings[n]` 
 
@@ -111,19 +111,19 @@ See below for default options values :
 ```txt
 
 - assets
-    - batiment-a
+    - a
         in.m4v
         out.m4v
         main.jpg
-    - batiment-a-bis
-    - batiment-b
-    - batiment-c
+    - a-bis
+    - b
+    - c
     - carousel
         img1.jpg
         ...
     - main-turn-around
         - frames
-            frame000010.jpg
+            frame1.jpg
             ...
         frames.json
     config.json
@@ -132,7 +132,7 @@ See below for default options values :
 
 ## Videos
 
-Create optimized videos from an image sequence (`in` and `out`) for each buildings.
+Create optimized videos for the web using `ffmpeg` and `HandBrakeCLI` from an image sequence.
 
 ## Turn-around
 
@@ -161,6 +161,8 @@ assets/config.json
 ## Test
 
 Edit `test/.env` to set path variables to target a valid assets directory.
+
+## Useful commands
 
 ### Extract the first image from a video
 
