@@ -9,6 +9,44 @@ sudo apt-get install ffmpeg
 sudo apt-get install handbrake-cli
 ```
 
+## Installation
+
+To install the `virtual-tour-cli` tools localy, `cd` into the `virtual-tour-cli` project directory, then type :
+
+```bash
+npm i
+npm run build
+npm link 
+```
+
+## Development
+
+### Build
+
+```bash
+npm run build
+```
+
+To automaticly build on sources changes :
+
+```bash
+npm run watch:build
+```
+
+### Test
+
+```bash
+npm run test
+```
+
+To automaticly build on sources changes :
+
+```bash
+npm run watch:test
+```
+
+To Debuging `typescript` with vscode, launch the `Debug with Mocha` task. 
+
 ## Usage
 
 ```txt
@@ -119,6 +157,10 @@ Generate the config file.
 ```txt
 assets/config.json
 ```
+
+## Test
+
+Edit `test/.env` to set path variables to target a valid assets directory.
 
 ### Extract the first image from a video
 
