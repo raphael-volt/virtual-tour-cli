@@ -1,5 +1,5 @@
 import * as commander from 'commander'
-import { join, isAbsolute } from "path";
+import { join, isAbsolute, dirname } from "path";
 import { readJSON, writeJSON, exists, remove } from "fs-extra";
 import { InputConfig } from "./core/input-config";
 import { ProgressLog, blue, yellow, red, cyan, green } from "./utils/log-util";
@@ -18,11 +18,12 @@ export class App {
 
     private cwd: string
     private inputConfigPath: string
+    private outputConfigPath: string
     private outputPath: string
+    private inputPath: string
     private tasks: Task[] = []
     private inputConfig: InputConfig
     private outputConfig: InputConfig
-    private outputConfigPath: string
     /**
      * flags: string, description?: string, fn?: RegExp | ((arg1: any, arg2: any) => void), defaultValue?: any)
      */
@@ -31,16 +32,19 @@ export class App {
     }
     constructor() {
 
-        this.cwd = process.cwd()
 
         cdr.version("1.0.1")
             .arguments('<input> <output>')
             .action((input, output) => {
+                let cwd = process.cwd()
                 if (!isAbsolute(input))
-                    input = join(this.cwd, input)
-
+                    input = join(cwd, input)
+                
                 if (!isAbsolute(output))
-                    output = join(this.cwd, output)
+                    output = join(cwd, output)
+                this.inputPath = dirname(input)
+                this.cwd = this.inputPath
+                process.chdir(this.inputPath)
                 this.inputConfigPath = input
                 this.outputPath = output
             })
@@ -75,10 +79,10 @@ export class App {
                                 .catch(err => {
                                     console.log(red("Can not read output config"))
                                 })
-                            }
-                            else {
-                                this.outputConfig = JSON.parse(JSON.stringify(this.inputConfig))
-                                this.nextTask()
+                        }
+                        else {
+                            this.outputConfig = JSON.parse(JSON.stringify(this.inputConfig))
+                            this.nextTask()
                         }
                     })
                 }).catch((reason) => {

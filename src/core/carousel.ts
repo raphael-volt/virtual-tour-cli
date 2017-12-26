@@ -23,6 +23,7 @@ export class Carousel extends TaskBase {
         let dir = join(this.inputPath, this.inputConfig.carousel.src)
         exists(dir, exists => {
             if (!exists) {
+                
                 return this.reject("Carousel directory does not exists")
             }
             readdir(dir, (err, files: string[]) => {
