@@ -76,10 +76,10 @@ export class Carousel extends TaskBase {
                     this.updateEncodingProgress(this.currentIndex)
                     this.nextImage()
                 })
-            }
-            else {
-                delete (this.outputConfig.carousel.src)
-                this.outputConfig.carousel = this.outputConfig.carousel
+        }
+        else {
+            this.outputConfig.carousel = carousel
+            delete (this.outputConfig.carousel.src)
             this.updateEncodingProgress(this.numImages, true)
             this.progressLog.done()
             // Done!
