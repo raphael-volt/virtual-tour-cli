@@ -76,19 +76,17 @@ Only `src` values must be defined for `carousel`, `turnAround` and `buildings[n]
 
 If the `turnAround.numFrames` is not defined, all images found in the `src` folder will be added.
 
-See below for default options values :
+`json.video.formats` must contain at least one format.
+
+See below an example for options values :
 
 ```json
 {
     "jpegQuality": 0.9,
-    "video": {
-        "extension":"m4v",
-        "ffmpegOptions": {
-            "framerate" : 25
-        },
-        "handBrakeOptions": {
-            "bitrate": 4000
-        }
+     "video": {
+        "bitrate": 4000,
+        "framerate": 25,
+        "formats": ["mp4", "webm", "ogv"]
     },
     "carousel": {
         "src": "carousel"
