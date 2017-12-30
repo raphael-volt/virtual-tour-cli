@@ -27,6 +27,7 @@ export interface ICarousel {
 export interface IVideo {
     bitrate: number
     framerate: number
+    formats: string[]
 }
 
 export interface ILayout {

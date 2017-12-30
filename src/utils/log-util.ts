@@ -10,7 +10,7 @@ export class ProgressLog {
         public numChars: number,
         public total: number,
         public stdout?: WStream,
-        public message?:string
+        public message?: string
     ) {
 
     }
@@ -19,7 +19,7 @@ export class ProgressLog {
         return this.stdout || process.stdout
     }
 
-
+    private waitTimer
     private _scaledProgress: number = 0;
     private _progress: number = 0;
     public get progress(): number {
@@ -30,28 +30,67 @@ export class ProgressLog {
         let s = this.numChars / this.total
         const p = Math.round(this._progress * s)
         this._scaledProgress = p
+        if (!this.waitTimer) {
+            let count: number = 0
+            this.waitTimer = setInterval(() => {
+                let s: string
+                switch (count % 4) {
+                    case 0:
+                        s = "|"
+                        break;
+
+                    case 1:
+                        s = "/"
+
+                        break;
+
+                    case 2:
+                        s = "-"
+
+                        break;
+
+                    case 3:
+                        s = "\\"
+
+                        break;
+
+                    default:
+                        break;
+                }
+                if (s) {
+                    this.clear()
+                    this.waitStr = yellow(s)
+                    this.output()
+                }
+                count++
+            }, 300)
+        }
         this.clear()
         this.output()
     }
+    private waitStr: string = ""
     private cursorPos
     private clear() {
         const stdout: any = this.getSocket()
-        if(!this.message) {
+        if (!this.message) {
             cursorTo(stdout, 0, undefined)
             clearLine(stdout, 1)
         }
         else {
             let rows = process.stdout.rows
-            cursorTo(stdout, 0, rows-2)
+            cursorTo(stdout, 0, rows - 2)
             clearScreenDown(stdout)
         }
-        
+
     }
     private output() {
         const stdout: any = this.getSocket()
         let output: string = ""
-        if(this.message) {
-            output = this.message + EOL
+        if (this.message) {
+            output = this.message
+            if (this.waitStr && this.waitStr.length)
+                output += " " + this.waitStr
+            output += EOL
         }
         let str: string[] = []
 
@@ -69,29 +108,18 @@ export class ProgressLog {
         }
         output += colorizeBackground(str.join(""), "white", "bgWhite")
         output += ' ' + yellow(Math.round(this._progress / this.total * 100) + " %")
+
         this.getSocket().write(output)
-        /*
-        let str: string[] = ["["]
-
-        let s = this.numChars / this.total
-        const p = Math.round(this._progress * s)
-        let i: number
-
-        for (i = 0; i < this._scaledProgress; i++) {
-            str.push(green("*"))
-        }
-        for (; i < this.numChars; i++) {
-            str.push(white('-'))
-        }
-        str.push(']')
-        str.push(' ' + yellow(Math.round(this._progress / this.total * 100) + " %"))
-        this.getSocket().write(str.join(""))
-        */
+        
     }
     done() {
+        if (this.waitTimer)
+            clearInterval(this.waitTimer)
+        this.waitStr = ""
+        this.clear()
+        this.output()
         this.getSocket().write(EOL)
     }
-
 }
 
 type colorNames = "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" | "gray" | "grey"

@@ -5,7 +5,7 @@ import * as imagick from "imagemagick";
 import { resize, ResizeConfig } from "../utils/image-util";
 import { TaskBase } from "./task-base";
 import { ILayout, ITurnAround, ITurnAroundImage } from "./input-config";
-import { yellow, blue, red } from "../utils/log-util";
+import { yellow, blue, red, green } from "../utils/log-util";
 
 const TURN_AROUND_IMAGE_DIR: string = "frames"
 export class TurnAround extends TaskBase {
@@ -18,14 +18,19 @@ export class TurnAround extends TaskBase {
         return this.inputConfig.turnAround
     }
 
+    private updateEncodingProgress(complete: boolean=false) {
+        this.updateProgress("Encoding image", this.imageCount, this.numImages, complete)
+    }
+    private numImages: number
     private imageCount: number
     private inputfiles: string[] = []
     protected initProcess() {
-        console.log(yellow("Starting TurnAround task"))
         this.getImageList().then(files => {
-            this.progressLog.total = files.length
-            this.progressLog.progress = 0
+            this.numImages = this.progressLog.total = files.length
             this.inputfiles = files
+            this.imageCount = 0
+            this.printTask("Starting TurnAround task")
+            this.updateEncodingProgress()
             emptyDir(join(this.outputPath, this.turnAround.path, TURN_AROUND_IMAGE_DIR))
             .then(()=>{
                 this.turnAround.images = []
@@ -87,15 +92,15 @@ export class TurnAround extends TaskBase {
                     }
                 )
                 this.imageCount ++
-                this.progressLog.progress = this.imageCount
+                this.updateEncodingProgress()
                 this.nextImage()
             })
             .catch(this.reject)
-
+            
         }
         else {
             let ta = this.turnAround
-            this.progressLog.progress = this.progressLog.total
+            this.updateEncodingProgress(true)
             this.progressLog.done()
             console.log(blue("Save turn-around json"))
             let json: any = {}

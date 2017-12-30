@@ -4,13 +4,13 @@ import { join, extname } from "path";
 import { remove, mkdirp, exists, emptyDir, readdir } from "fs-extra";
 import * as imagick from "imagemagick";
 import { ResizeConfig, resize } from "../utils/image-util";
-import { yellow, blue } from "../utils/log-util";
+import { yellow, blue, green } from "../utils/log-util";
 import { TaskBase } from "./task-base";
 export class Carousel extends TaskBase {
 
     protected initProcess() {
         // check output dir
-        console.log(yellow("Starting Carousel task"))
+        this.printTask("Starting Carousel task")
         this.checkOutPutDir().then(this.createFileList)
     }
 
@@ -19,11 +19,15 @@ export class Carousel extends TaskBase {
         return emptyDir(dir)
     }
 
+    private updateEncodingProgress = (progress: number, complete: boolean = false) => {
+        this.updateProgress("Encoding image", progress, this.numImages, complete)
+    }
+
     private createFileList = () => {
         let dir = join(this.inputPath, this.inputConfig.carousel.src)
         exists(dir, exists => {
             if (!exists) {
-                
+
                 return this.reject("Carousel directory does not exists")
             }
             readdir(dir, (err, files: string[]) => {
@@ -32,8 +36,7 @@ export class Carousel extends TaskBase {
                 files = this.imageFilter(files)
                 this.inputConfig.carousel.images = files
                 this.numImages = this.progressLog.total = files.length
-                console.log(blue("Start encoding " + files.length + " image(s)"))
-                this.progressLog.progress = 0
+                this.updateEncodingProgress(0)
                 this.nextImage()
             })
         })
@@ -70,13 +73,14 @@ export class Carousel extends TaskBase {
                 .then(size => {
                     carousel.images[this.currentIndex] = outFilename
                     this.currentIndex++
-                    this.progressLog.progress = this.currentIndex
+                    this.updateEncodingProgress(this.currentIndex)
                     this.nextImage()
                 })
-        }
-        else {
-            delete(this.outputConfig.carousel.src)
-            this.outputConfig.carousel = this.outputConfig.carousel
+            }
+            else {
+                delete (this.outputConfig.carousel.src)
+                this.outputConfig.carousel = this.outputConfig.carousel
+            this.updateEncodingProgress(this.numImages, true)
             this.progressLog.done()
             // Done!
             this.resolve(true)
