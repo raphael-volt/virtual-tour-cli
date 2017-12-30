@@ -1,7 +1,7 @@
 import { TaskBase } from "./task-base";
 import { IVideo, IBuilding } from "./input-config";
-import { readdir, exists, unlink, mkdirp, emptyDir } from "fs-extra";
-import { join } from "path";
+import { readdir, exists, unlink, mkdirp, emptyDir, copy, remove } from "fs-extra";
+import { join, extname, basename, dirname } from "path";
 import { Observer, Observable, Subject } from "rxjs";
 import { yellow, blue, red, cyan } from "../utils/log-util";
 import { resize, ResizeConfig } from "../utils/image-util";
@@ -12,6 +12,30 @@ const INPUT_REVERSED_VIDEO_NAME: string = "input.reversed.mp4"
 const IN_VIDEO_NAME: string = "in"
 const OUT_VIDEO_NAME: string = "out"
 
+const unlinkFiles = (files: string[]): Observable<number> => {
+    return Observable.create(obs => {
+        files = files.slice()
+        let i: number = 0
+        let next = () => {
+            if (files.length) {
+                const src = files.shift()
+                exists(src, ex => {
+                    if (ex) {
+                        unlink(src).then(() => {
+                            obs.next(i++)
+                            next()
+                        })
+                    }
+                    else
+                        next()
+                })
+            }
+            else
+                obs.complete()
+        }
+        next()
+    })
+}
 export class Video extends TaskBase {
 
     protected initProcess() {
@@ -28,13 +52,14 @@ export class Video extends TaskBase {
     private numVideos: number
     private currentIndex: number = 0
 
-    private updateProgressLogMessage(filename = "") {
-        let i: number = this.progressLog.progress + 1
+    private updateProgressLogMessage(info = "") {
+        let i: number = this.progressLog.progress
         if (i > this.progressLog.total)
             i = this.progressLog.total
         this.progressLog.message = blue("Generate videos of "
             + this.inputConfig.buildings[this.currentIndex].name)
-            + cyan(" (" + i + " of " + this.numVideos * 8 + ") " + filename)
+            + cyan(" (" + i + " of " + this.numVideos * 8 + ") |" + info + "|")
+        console.log(this.progressLog.message)
         this.progressLog.progress = this.progressLog.progress
     }
     private _encoder: VideoEncoder
@@ -43,32 +68,38 @@ export class Video extends TaskBase {
             this._encoder = new VideoEncoder()
         return this._encoder
     }
-    private unlink(files: string[]): Observable<number> {
-        return Observable.create(obs => {
-            files = files.slice()
-            let i: number = 0
-            let next = () => {
-                if (files.length) {
-                    const src = files.shift()
-                    exists(src, ex => {
-                        if (ex) {
-                            unlink(src).then(() => {
-                                obs.next(i++)
-                                next()
-                            })
-                        }
-                        else
-                            next()
-                    })
-                }
-                else
-                    obs.complete()
-            }
-            next()
-        })
-    }
+
     private _currentSrc: string
     private _currentDst: string
+
+    private encodeHandler = cmd => {
+        let name: string = basename(cmd.filename)
+        let info: string = name
+        switch (cmd.status) {
+            case "start":
+                this.progressLog.progress++
+                break
+            case "pass1":
+                this.progressLog.progress++
+            case "pass2":
+                info += " " + cmd.status
+                break;
+            case "done":
+                info = null
+                break;
+            case "error":
+                info = null
+                console.log(red("Encode error : " + cmd.filename))
+                break;
+
+            default:
+                break;
+
+        }
+        if (info) {
+            this.updateProgressLogMessage(info)
+        }
+    }
     private nextBuilding = () => {
         if (this.currentIndex < this.numVideos) {
             let done = (err?) => {
@@ -78,84 +109,89 @@ export class Video extends TaskBase {
                 this.currentIndex++
                 this.nextBuilding()
             }
-            //let dest: string = join(this.outputPath, this.currentBuilding.path)
             let b: IBuilding = this.currentBuilding
-            let src = join(this.inputPath, b.src)
-            let dest = join(this.outputPath, b.path)
-            const _in = "in"
-            const _out = "out"
-            const _mp4 = "mp4"
-            const _webm = "webm"
-            const _ogv = "ogv"
-            const getIn = (ext: "mp4" | "ogv" | "webm") => {
-                return _in + "." + ext
+            const srcDir: string = join(this.inputPath, b.src)
+            const destDir: string = join(this.outputPath, b.path)
+            const _in: string = "in"
+            const _out: string = "out"
+            const getIn = (ext: "mp4" | "ogv" | "webm" | "m4v", pre: string = "") => {
+                return _in + pre + "." + ext
             }
-            const getOut = (ext: "mp4" | "ogv" | "webm") => {
-                return _out + "." + ext
+            const getOut = (ext: "mp4" | "ogv" | "webm" | "m4v", pre: string = "") => {
+                return _out + pre + "." + ext
             }
-            const inSrc = join(dest, getIn("mp4"))
-            const outSrc = join(dest, getOut("mp4"))
+            const inSrcName: string = getIn("mp4", ".tmp")
+            const outSrcName: string = getOut("mp4", ".tmp")
+            const inSrc = join(destDir, inSrcName)
+            const outSrc = join(destDir, outSrcName)
             const _lw: number = this.inputConfig.layout.width
             const _lh: number = this.inputConfig.layout.height
             const _br: number = this.inputConfig.video.bitrate
             const _fr: number = this.inputConfig.video.framerate
             const encoder: VideoEncoder = this.encoder
-            let es = encoder.events.subscribe(cmd => {
-                switch (cmd.status) {
-                    case "start":
-
-                        break;
-
-
-                    case "pass1":
-
-                        break;
-
-                    case "pass2":
-
-                        break;
-
-                    case "done":
-
-                        break;
-                    case "error":
-
-                        break;
-
-                    default:
-                        break;
-
-                }
-            })
-            let s = Observable.concat(
-                this.unlink([
-                    join(dest, getIn("mp4")),
-                    join(dest, getOut("mp4")),
-                    join(dest, getIn("ogv")),
-                    join(dest, getOut("ogv")),
-                    join(dest, getIn("webm")),
-                    join(dest, getOut("webm")),
-                    join(dest, "main.jpg")
+            let es = encoder.events.subscribe(this.encodeHandler)
+            let subs = [
+                unlinkFiles([
+                    join(destDir, getIn("mp4")),
+                    join(destDir, getOut("mp4")),
+                    join(destDir, getIn("ogv")),
+                    join(destDir, getOut("ogv")),
+                    join(destDir, getIn("webm")),
+                    join(destDir, getOut("webm")),
+                    join(destDir, "main.jpg")
                 ]),
-                encoder.imgSequence(src, inSrc, _lw, _lh, _fr),
-                encoder.reverse(inSrc, outSrc),
+                Observable.create(obs => {
+                    mkdirp(destDir).then(() => {
+                        obs.next()
+                        obs.complete()
+                    })
+                }),
+
+                encoder.imgSequence(
+                    srcDir, destDir,
+                    inSrcName,
+                    outSrcName,
+                    _lw, _lh, _fr, _br, "h264",
+                    "main.jpg", this.inputConfig.jpegQuality),
+
                 encoder.encode("webm", inSrc,
-                    join(dest, getIn("webm")),
+                    join(destDir, getIn("webm")),
                     _br, _lw, _lh),
                 encoder.encode("webm", outSrc,
-                    join(dest, getOut("webm")),
+                    join(destDir, getOut("webm")),
                     _br, _lw, _lh),
+
+                encoder.encode("mp4", inSrc,
+                    join(destDir, getIn("mp4")),
+                    _br, _lw, _lh),
+                encoder.encode("mp4", outSrc,
+                    join(destDir, getOut("mp4")),
+                    _br, _lw, _lh),
+
                 encoder.encode("ogv", inSrc,
-                    join(dest, getIn("ogv")),
+                    join(destDir, getIn("ogv")),
                     _br, _lw, _lh),
                 encoder.encode("ogv", outSrc,
-                    join(dest, getOut("ogv")),
+                    join(destDir, getOut("ogv")),
                     _br, _lw, _lh)
-            ).subscribe(value => {
 
-            },
-                done,
-                done)
+            ]
+            const nextSub = () => {
+                if (subs.length) {
+                    let s = subs.shift().subscribe(
+                        res => { },
+                        done,
+                        () => {
+                            s.unsubscribe()
+                            nextSub()
+                        }
+                    )
+                }
+                else {
+                    done()
+                }
+            }
+            nextSub()
         }
         else {
             this.progressLog.message = null
@@ -177,97 +213,16 @@ export class Video extends TaskBase {
     private get currentBuilding(): IBuilding {
         return this.inputConfig.buildings[this.currentIndex]
     }
-    /*
-    private _generateInput(): Promise<void> {
-        return new Promise((resolve, reject) => {
-            let b: IBuilding = this.currentBuilding
-            let src = join(this.inputPath, b.src)
-            let dest = join(this.outputPath, b.path)
-
-            readdir(src)
-                .then(files => {
-                    files = this.imageFilter(files)
-                    if (!files.length) {
-                        console.log(red("No image found, process skiped"))
-                        return resolve()
-                    }
-                    files.sort()
-                    let data = getImageSuiteData(files[0])
-                    if (!data)
-                        return this.reject("Cant get a prefix or a start number from filename:" + files[0])
-
-                    const ext: string = data[3]
-                    files = files.filter(filename => {
-                        let d = getImageSuiteData(filename)
-                        if (!d)
-                            return false
-                        if (d[0] == data[0] && d[2] == data[2] && d[3] == ext)
-                            return true
-                        return false
-                    })
-                    let optionsMap: any = {}
-                    optionsMap["framerate"] = this.videoConfig.ffmpegOptions.framerate
-
-                    if (!files.length) {
-                        console.log(red("No image found, process skiped"))
-                        return resolve()
-                    }
-
-                    let options: any[] = [
-                        ["start_number", data[1]],
-                        ["i", join(b.src, data[0] + "%0" + data[2] + "d." + ext)],
-                        ["s", this.inputConfig.layout.width + "x" + this.inputConfig.layout.height],
-                        ["an", ""],
-                        ["framerate", this.videoConfig.ffmpegOptions.framerate],
-                        ["vcodec", "h264"],
-                        ["", join(this.outputPath, b.path, IN_VIDEO_NAME + ".mp4")]
-                    ]
-
-                    let done = () => {
-                        let last = files[files.length - 1]
-                        b.image = "main.jpg"
-                        let conf: ResizeConfig = {
-                            srcPath: join(src, last),
-                            dstPath: join(dest, b.image),
-                            quality: this.inputConfig.jpegQuality,
-                            format: 'jpg',
-                            width: this.inputConfig.layout.width,
-                            height: this.inputConfig.layout.height
-                        }
-                        resize(conf, this.inputConfig.layout.width, this.inputConfig.layout.height, false)
-                            .then(() => {
-                                this.exec("ffmpeg", options)
-                                    .subscribe(
-                                    message => { },
-                                    reject,
-                                    resolve
-                                    )
-                            })
-                    }
-                    exists(INPUT_VIDEO_NAME, _exists => {
-                        if (_exists) {
-                            unlink(INPUT_VIDEO_NAME)
-                                .then(done)
-                                .catch(reject)
-                        }
-                        else
-                            done()
-                    })
-
-                }).catch(reject)
-        })
-    }
-    */
 }
 
 
 
-type EncodeStatus = "start" | "pass1" | "pass2" | "done" | "error"
-type VideoCommand = "ffmpeg" | "HandBrakeCLI"
-type VideoCodec = "h264"
-type VideoFormat = "webm" | "mp4" | "ogv"
+export type EncodeStatus = "start" | "pass1" | "pass2" | "done" | "error"
+export type VideoCommand = "ffmpeg" | "HandBrakeCLI"
+export type VideoCodec = "h264" | "libx264"
+export type VideoFormat = "webm" | "mp4" | "ogv"
 
-interface VCmd {
+export interface VCmd {
     name: VideoCommand
     format?: VideoFormat
     status?: EncodeStatus
@@ -279,53 +234,158 @@ interface VCmd {
     framerate?: number
 }
 
-interface ImageSequenceCmd extends VCmd {
+export interface ImageSequenceCmd extends VCmd {
     start_number?: number
+    lastFrame?: string
+    files?: string[]
+    prefix?: string
+    numInt?: number
+    imgExt?: string
 }
 
-class VideoEncoder {
+export class VideoEncoder {
 
     private _imageSequence: Observable<any>
     bitrate: number = 2000
     public events: Subject<VCmd> = new Subject<VCmd>()
 
-    imgSequence(inputDir: string, videoPath: string,
-        width: number, height: number, framerate: number, vcodec: VideoCodec = "h264"): Observable<ImageSequenceCmd> {
+    reverseImageSequence(cmd: ImageSequenceCmd): Observable<ImageSequenceCmd> {
         return Observable.create((observer: Observer<ImageSequenceCmd>) => {
 
+        })
+    }
+
+    imgSequence(
+        inputDir: string,
+        outputDir: string,
+        videoName: string,
+        reversed: string,
+        width: number, height: number,
+        framerate: number, bitrate: number,
+        vcodec: VideoCodec = "libx264",
+        lastImage: string = null, jpgQuality: number = .8):
+        Observable<ImageSequenceCmd> {
+
+        return Observable.create((observer: Observer<ImageSequenceCmd>) => {
+            const notify = cmd => {
+                this.events.next(cmd)
+                observer.next(cmd)
+                observer.complete()
+            }
             let done = (err, cmd?: ImageSequenceCmd) => {
                 if (err) {
                     s.unsubscribe()
                     return observer.error(err)
                 }
-                this.events.next(cmd)
-                observer.next(cmd)
-                observer.complete()
+                if (lastImage) {
+
+                    let conf: ResizeConfig = {
+                        srcPath: join(inputDir, cmd.lastFrame),
+                        dstPath: lastImage,
+                        quality: jpgQuality,
+                        format: 'jpg',
+                        width: width,
+                        height: height
+                    }
+                    resize(conf, width, height, false)
+                        .then(() => {
+                            notify(cmd)
+                        })
+                        .catch(done)
+                }
+                else
+                    notify(cmd)
             }
+
             let s = ImageSequence.getCommand(inputDir).subscribe(cmd => {
-                cmd.filename = videoPath
+                const _oldCwd: string = process.cwd()
+                cmd.filename = join(outputDir, videoName)
                 cmd.s = width + "x" + height
                 cmd.an = ""
                 cmd.framerate = framerate
                 cmd.vcodec = vcodec
                 cmd.status = "start"
                 cmd.format = "mp4"
+
                 this.events.next(cmd)
                 observer.next(cmd)
-
-                const str = "ffmpeg -start_number " + cmd.start_number + " -i " + cmd.i
-                    + " -s " + cmd.s + " -an -framerate " + framerate
-                    + " -vcodec " + vcodec
-                    + " " + videoPath
+                //  -b:v 1M -minrate 1M -maxrate 1M
+                const imgSeqCmd = (cmd: ImageSequenceCmd, path: string, bitrate: number = NaN) => {
+                    let br = ""
+                    if (!isNaN(bitrate))
+                        br = ` -b:v ${bitrate}k `
+                    return `ffmpeg -start_number ${cmd.start_number} -i ${cmd.i} -s ${cmd.s} -vcodec ${vcodec}${br} -an -framerate ${framerate} ${path}`
+                }
+                let str = imgSeqCmd(cmd, cmd.filename)
+                let dirChanged: boolean = false
+                const execError = (err?) => {
+                    if (!err)
+                        return false
+                    if (dirChanged)
+                        process.chdir(_oldCwd)
+                    cmd.status = "error"
+                    done(err, cmd)
+                    return true
+                }
                 exec(
                     str,
                     (err, stderr, stdout) => {
-                        if (err) {
-                            cmd.status = "error"
-                            return done(err, cmd)
+                        if (execError(err))
+                            return
+
+                        if (reversed) {
+
+                            const _tmdDirname: string = ".tmp"
+                            const _tmpPath: string = join(outputDir, _tmdDirname)
+                            const _reversedPath: string = join(outputDir, reversed)
+                            let i: number = 1
+                            mkdirp(join(_tmpPath))
+                                .then(() => {
+                                    process.chdir(_tmpPath)
+                                    dirChanged = true
+                                    let files: string[] = cmd.files.slice()
+                                    let iArg: string = cmd.prefix + "%0" + cmd.numInt + "d." + cmd.imgExt
+                                    let cp = () => {
+                                        if (files.length) {
+                                            let src = join(inputDir, files.pop())
+                                            let dst: string = i.toString()
+                                            for (let j = dst.length; j < cmd.numInt; j++) {
+                                                dst = "0" + dst
+                                            }
+                                            dst = cmd.prefix + dst + "." + cmd.imgExt
+                                            copy(src, dst)
+                                                .then(() => {
+                                                    i++
+                                                    cp()
+                                                }).catch(execError)
+                                        }
+                                        else {
+                                            cmd.i = iArg
+                                            cmd.start_number = 1
+                                            exec(
+                                                imgSeqCmd(cmd, _reversedPath),
+                                                (e, stdE, stdO) => {
+                                                    process.chdir(_oldCwd)
+                                                    dirChanged = false
+                                                    remove(_tmdDirname)
+                                                        .then(() => {
+                                                            if (execError(e)) {
+                                                                return
+                                                            }
+                                                            done(null, cmd)
+                                                        })
+                                                        .catch(execError)
+                                                }
+                                            )
+                                        }
+                                    }
+                                    cp()
+                                })
                         }
-                        cmd.status = "done"
-                        done(null, cmd)
+                        else {
+                            cmd.status = "done"
+                            done(null, cmd)
+                        }
                     })
             },
                 done,
@@ -334,13 +394,17 @@ class VideoEncoder {
         })
     }
 
-    reverse(src: string, dest: string): Observable<VCmd> {
+    reverse(src: string, dest: string, bitrate: number): Observable<VCmd> {
         return Observable.create((observer: Observer<VCmd>) => {
             let cmd: VCmd = { name: "ffmpeg", status: "start", format: "mp4" }
+            cmd.filename = dest
             this.events.next(cmd)
             observer.next(cmd)
             exec(
-                cmd.name + " -i " + src + " -vf reverse " + dest,
+                /*+ " -maxrate " + bitrate + "K"
+                    + " " + bitrate + "K" */
+                cmd.name + ` -i ${src} -b:v ${bitrate}k -vf reverse ${dest}`,
+                //cmd.name + ` -i ${src} -crf 28 -vf reverse ${dest}`,
                 (err, stderr, stdout) => {
                     if (err) {
                         cmd.status = "error"
@@ -359,7 +423,8 @@ class VideoEncoder {
 
     encode(format: VideoFormat, src: string, dst: string, bitrate: number, width?: number, height?: number): Observable<VCmd> {
         return Observable.create((observer: Observer<VCmd>) => {
-            const cmd: VCmd = { name: (format == "mp4" ? "HandBrakeCLI" : "ffmpeg") }
+            //const cmd: VCmd = { name: (format == "mp4" ? "HandBrakeCLI" : "ffmpeg") }
+            const cmd: VCmd = { name: "ffmpeg" }
             cmd.i = src
             cmd.filename = dst
             cmd.status = "start"
@@ -369,21 +434,25 @@ class VideoEncoder {
             switch (format) {
 
                 case "webm":
+                    // ffmpeg -i input.mp4 -c:v libvpx-vp9 -b:v 2M output.webm
+                    // str += ` -c:v libvpx-vp9 -b:v ${bitrate}K -speed 3 ${dst}`
+
+
+                    // str += ` -c:v libvpx-vp9 -speed 3 ${dst}`
                     cmd.status = "pass1"
-                    const tmpFile: string = "/dev/null"
-                    str += " -c:v libvpx-vp9 -b:v " + bitrate + "K -pass 1"
-                        + " -speed 4 -c:a libopus -an -f webm -y " + tmpFile
+                    str += ` -c:v libvpx-vp9 -b:v ${bitrate}k -pass 1 -speed 4 -c:a libopus -f webm /dev/null`
                     break;
 
                 case "ogv": {
-                    str += " -codec:v libtheora -b:v " + bitrate + "K -an " + dst
+                    //str += ` -codec:v libtheora -b:v ${bitrate}K -an ${dst}`
+                    str += ` -codec:v libtheora -an ${dst}`
                     break;
                 }
 
                 case "mp4": {
                     if (!width || !height)
                         return observer.error("missing dimensions")
-                    str += `-o ${dst} -f av_mp4 -O -e x264 -b ${bitrate} -2 -a none --non-anamorphic -w ${width} -l ${height}`
+                    str += ` -o ${dst} -f av_mp4 -O -e x264 -b ${bitrate} -2 -a none --non-anamorphic -w ${width} -l ${height}`
                     break;
                 }
 
@@ -406,13 +475,14 @@ class VideoEncoder {
                         this.events.next(cmd)
                         return observer.error(err)
                     }
-
+                    /*
+                    done()
+                    */
                     if (format == "webm") {
                         cmd.status = "pass2"
                         this.events.next(cmd)
                         observer.next(cmd)
-                        str = cmdStr + " -c:v libvpx-vp9 -b:v " + bitrate + "K -pass 2"
-                            + " -speed 1 -c:a libopus -an " + dst
+                        str = cmdStr + ` -c:v libvpx-vp9 -b:v ${bitrate}k -pass 2 -speed 2 -c:a libopus ${dst}`
                         exec(
                             str,
                             (err, stre, stdo) => {
@@ -431,9 +501,17 @@ class VideoEncoder {
             )
         })
     }
+
+    handBrake(src: string, dst: string,
+        format: VideoFormat, bitrate: number, framerate: number, 
+        width: number, height: number): Observable<VCmd> {
+        return Observable.create((observer: Observer<VCmd>) => {
+
+        })
+    }
 }
-import { extname } from "path";
-class ImageSequence {
+
+export class ImageSequence {
 
     static readonly getCommand = (inputDir: string): Observable<ImageSequenceCmd> => Observable.create((observer: Observer<ImageSequenceCmd>) => {
         readdir(inputDir)
@@ -458,10 +536,16 @@ class ImageSequence {
                 if (!files.length) {
                     return observer.error("No image found, process skiped")
                 }
+
                 observer.next({
+                    lastFrame: files[files.length - 1],
                     name: "ffmpeg",
                     start_number: data[1],
-                    i: join(inputDir, data[0] + "%0" + data[2] + "d." + ext)
+                    i: join(inputDir, data[0] + "%0" + data[2] + "d." + ext),
+                    files: files,
+                    imgExt: ext,
+                    numInt: Number(data[2]),
+                    prefix: data[0]
                 })
                 observer.complete()
             })

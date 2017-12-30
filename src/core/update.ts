@@ -9,7 +9,7 @@ export class Update extends TaskBase {
         // clean up config
         console.log(yellow("Starting Update task"))        
         const config = this.inputConfig
-        delete(config.video.ffmpegOptions)
+        delete(config.video)
         delete(config.jpegQuality)
         delete(config.carousel.src)
         delete(config.turnAround.src)

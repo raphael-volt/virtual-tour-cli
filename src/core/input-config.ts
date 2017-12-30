@@ -25,13 +25,8 @@ export interface ICarousel {
 }
 
 export interface IVideo {
-    extension: string
-    ffmpegOptions?: {
-        framerate: number
-    }
-    handBrakeOptions?: {
-        bitrate: number
-    }
+    bitrate: number
+    framerate: number
 }
 
 export interface ILayout {
@@ -43,6 +38,7 @@ export interface InputConfig {
     jpegQuality?: number
     name: string
     video: IVideo
+
     layout: ILayout
     carousel: ICarousel
     buildings: IBuilding[]
