@@ -6,8 +6,11 @@ import { Observer, Observable, Subject } from "rxjs";
 import { yellow, blue, red, cyan, green } from "../utils/log-util";
 import { resize, ResizeConfig } from "../utils/image-util";
 import { EOL } from "os";
+import { exec, spawn } from "child_process";
+/*
 const child_process = require('child_process')
 const exec = child_process.exec;
+*/
 const INPUT_VIDEO_NAME: string = "input.mp4"
 const INPUT_REVERSED_VIDEO_NAME: string = "input.reversed.mp4"
 const IN_VIDEO_NAME: string = "in"
@@ -499,18 +502,50 @@ export class VideoEncoder {
                 filename: dst
             }
             this.events.next(cmd)
+            spawn(cmd.name, [
+                "-i", src,
+                "-o", dst,
+                "-f", v,
+                "-e", ev,
+                "-b", String(bitrate),
+                "-2",
+                "-a", "none",
+                "--non-anamorphic",
+                "-w", String(width),
+                "-l", String(height)
+            ], {
+
+            }).on('message', (msg, sh)=>{
+                console.log(green(msg))
+                console.log(sh)
+            })
+            .on('exit', (code, signal) => {
+                console.log(yellow("exit"), code, signal)
+            })
+            .on('error', err => {
+                console.log(yellow("error"), red(err.name + ":" + err.message))
+                console.log(red(err.stack))
+                cmd.status = "error"
+                this.events.next(cmd)
+                return observer.error(err.stack)
+            })
+            .on('close', (code, signal) => {
+                cmd.status = "done"
+                this.events.next(cmd)
+                observer.next(true)
+                observer.complete()
+            })
+            /*
             exec(cmdstr, (e, se, so) => {
 
                 if (e) {
-                    cmd.status = "error"
-                    this.events.next(cmd)
-                    return observer.error(e)
                 }
                 cmd.status = "done"
                 this.events.next(cmd)
                 observer.next(true)
                 observer.complete()
             })
+            */
         })
     }
 }

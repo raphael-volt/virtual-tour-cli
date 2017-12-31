@@ -3,7 +3,7 @@ import * as sinon from 'sinon';
 import * as mocha from 'mocha';
 import * as env from "dotenv"
 import { join } from "path";
-import { readJson, remove, emptyDir, exists } from "fs-extra";
+import { readJson, remove, emptyDir, exists, ensureDir, mkdirp } from "fs-extra";
 
 env.config({ path: join(__dirname, ".env") })
 
@@ -12,6 +12,10 @@ import { Video, VideoEncoder } from "../src/core/video";
 import { TurnAround } from "../src/core/turn-around";
 import { Update } from "../src/core/update";
 import { InputConfig } from "../src/core/input-config";
+
+import { ImageSequence } from "../src/core/controllers/image-sequence";
+
+let imgSeq: ImageSequence = new ImageSequence()
 let _carousel: Carousel
 let _inputConfig: InputConfig
 let _outputConfig: InputConfig
@@ -36,17 +40,17 @@ describe('Tasks', () => {
 
             process.chdir(INPUT_DIR)
             remove(OUTPUT_DIR)
-            .then(done)
-            .catch(done)
+                .then(done)
+                .catch(done)
         }).catch(done)
     })
-
+/*
     after(done => {
         remove(OUTPUT_DIR)
             .then(done)
             .catch(done)
     })
-
+*/
     describe.skip('carousel', () => {
 
         it('should create', (done) => {
@@ -61,8 +65,48 @@ describe('Tasks', () => {
     })
 
     describe('videos', () => {
+        describe("encoding", () => {
+            it("should ensure dir", done => {
+                console.log(join(OUTPUT_DIR, _inputConfig.buildings[0].path))
+                mkdirp(join(OUTPUT_DIR, _inputConfig.buildings[0].path))
+                    .then(() => done())
+                    .catch(err => {
+                        done(String(err))
+                    })
+            })
+            it("should create IN", done => {
 
-        it('should create all', done => {
+                const srcBPath: string = join(INPUT_DIR, _inputConfig.buildings[0].src)
+                const dstBPath: string = join(OUTPUT_DIR, _inputConfig.buildings[0].path)
+
+                let s = imgSeq.events.subscribe(
+                    cmd => {
+                        console.log("cmd.status", cmd.status)
+                        switch (cmd.status) {
+                            case "error":
+                                s.unsubscribe()
+                                done("encode FAIL")
+                                break;
+                            case "done":
+                                s.unsubscribe()
+                                done()
+                                break;
+
+                            default:
+                                break;
+                        }
+                    }
+                )
+                imgSeq.encode(srcBPath, dstBPath, ".in.mp4",
+                    _inputConfig.layout.width, _inputConfig.layout.height,
+                    _inputConfig.video.framerate, _inputConfig.video.bitrate, "h264")
+
+            })
+            it.skip("should encode IN", done => {
+
+            })
+        })
+        it.skip('should create all', done => {
             let vid: Video = new Video(_inputConfig, _outputConfig, INPUT_DIR, OUTPUT_DIR)
             vid.start().then(success => {
                 done()
