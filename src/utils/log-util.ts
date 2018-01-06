@@ -1,5 +1,5 @@
 
-import { cursorTo, clearLine, clearScreenDown } from "readline";
+import { cursorTo, clearLine, clearScreenDown, moveCursor } from "readline";
 import { EOL } from "os";
 const colors = require('colors/safe');
 export interface WStream extends NodeJS.WritableStream {
@@ -19,72 +19,75 @@ export class ProgressLog {
         return this.stdout || process.stdout
     }
 
-    private waitTimer
+    private waitTimer = undefined
     private _scaledProgress: number = 0;
     private _progress: number = 0;
+    private _numLines: number = 0;
     public get progress(): number {
         return this._progress;
     }
+
+    private waitAnimCount: number = 0
+
+    private waitAnimTick = () => {
+        let s: string
+        switch (this.waitAnimCount % 4) {
+            case 0:
+                s = "|"
+                break;
+
+            case 1:
+                s = "/"
+
+                break;
+
+            case 2:
+                s = "-"
+
+                break;
+
+            case 3:
+                s = "\\"
+
+                break;
+
+            default:
+                break;
+        }
+        if (s) {
+            this.waitStr = yellow(s)
+            this.update()
+        }
+        this.waitAnimCount++
+    }
+
     public set progress(v: number) {
         this._progress = v;
         let s = this.numChars / this.total
         const p = Math.round(this._progress * s)
         this._scaledProgress = p
+
+        this.update()
+    }
+    update() {
         if (!this.waitTimer) {
-            let count: number = 0
-            this.waitTimer = setInterval(() => {
-                let s: string
-                switch (count % 4) {
-                    case 0:
-                        s = "|"
-                        break;
-
-                    case 1:
-                        s = "/"
-
-                        break;
-
-                    case 2:
-                        s = "-"
-
-                        break;
-
-                    case 3:
-                        s = "\\"
-
-                        break;
-
-                    default:
-                        break;
-                }
-                if (s) {
-                    this.clear()
-                    this.waitStr = yellow(s)
-                    this.output()
-                }
-                count++
-            }, 300)
+            this.waitTimer = setInterval(this.waitAnimTick, 250)
+            return this.waitAnimTick()
         }
-        this.clear()
-        this.output()
+        const str = this.getCurrentMessage()
+        if (str == this.lastOutput)
+            return
+        this.clearLines()
+        this.lastOutput = str
+        let n: number = 1
+        if (this.message) {
+            let l = this.message.split(EOL)
+            n += l.length
+        }
+        this._numLines = n
+        this.getSocket().write(str)
     }
-    private waitStr: string = ""
-    private cursorPos
-    private clear() {
-        const stdout: any = this.getSocket()
-        if (!this.message) {
-            cursorTo(stdout, 0, undefined)
-            clearLine(stdout, 1)
-        }
-        else {
-            let rows = process.stdout.rows
-            cursorTo(stdout, 0, rows - 2)
-            clearScreenDown(stdout)
-        }
-
-    }
-    private output() {
-        const stdout: any = this.getSocket()
+    private getCurrentMessage(): string {
         let output: string = ""
         if (this.message) {
             output = this.message
@@ -108,16 +111,39 @@ export class ProgressLog {
         }
         output += colorizeBackground(str.join(""), "white", "bgWhite")
         output += ' ' + yellow(Math.round(this._progress / this.total * 100) + " %")
-
-        this.getSocket().write(output)
-        
+        return output
+    }
+    private waitStr: string = ""
+    private clearLines() {
+        const stdout: any = this.getSocket()
+        if (this._numLines > 0) {
+            let n = this._numLines
+            while (n > 1) {
+                clearLine(stdout, 0)
+                moveCursor(stdout, 0, -1)
+                n--
+            }
+            clearLine(stdout, 0)
+            cursorTo(stdout, 0, undefined)
+        }
+    }
+    private lastOutput: string
+    private clearWaitAnim() {
+        this.waitStr = ""
+        if (this.waitTimer)
+        clearInterval(this.waitTimer)
+        this.waitTimer = undefined
+    }
+    clear() {
+        this.clearWaitAnim()
+        this.clearLines()
+        this._numLines = 0
     }
     done() {
-        if (this.waitTimer)
-            clearInterval(this.waitTimer)
         this.waitStr = ""
-        this.clear()
-        this.output()
+        this.update()
+        this.clearWaitAnim()
+        this._numLines = 0
         this.getSocket().write(EOL)
     }
 }
@@ -164,4 +190,8 @@ const gray = (str: string): string => {
 const grey = (str: string): string => {
     return colorize(str, "grey")
 }
-export { black, red, green, yellow, blue, magenta, cyan, white, gray, grey }
+const bold = (str: string): string => {
+    return colors.bold(str)
+}
+const CHECK: string = "✓"
+export { CHECK, black, red, green, yellow, blue, magenta, cyan, white, gray, grey, bold }
