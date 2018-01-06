@@ -1,6 +1,19 @@
 
 import * as imagemagick from "imagemagick";
 import { stat } from "fs";
+import { extname } from "path";
+const extensions = ["jpg", "jpeg", "png", "gif"]
+const imageFilter = (files: string[]):string[] => {
+    return files.filter(name => {
+        let ex = extname(name)
+        if (!ex)
+            return false
+        ex = ex.toLowerCase()
+        ex = ex.replace(".", "")
+        return extensions.indexOf(ex) > -1
+    })
+}
+
 export interface ResizeConfig {
     srcPath: string
     dstPath: string
@@ -56,4 +69,4 @@ const resize = (config: ResizeConfig, maxWidth: number, maxHeight: number, getSi
     })
 }
 
-export { getImageDimensions, getResizeDimensions, resize }
+export { getImageDimensions, getResizeDimensions, resize, imageFilter }

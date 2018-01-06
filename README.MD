@@ -50,7 +50,8 @@ To Debuging `typescript` with vscode, launch the `Debug with Mocha` task.
 ## Usage
 
 ```txt
-  Usage: vti [options] <input> <output>
+
+  Usage: vtt [options] <input> <output>
 
   Asset generator for virtual-tour project
 
@@ -58,10 +59,11 @@ To Debuging `typescript` with vscode, launch the `Debug with Mocha` task.
   Options:
 
     -V, --version     output the version number
-    -v, --video       generate video
+    -b, --buildings   generate videos and images for each building.
     -t, --turnaround  generate turn-around
     -c, --carousel    generate carousel
     -h, --help        output usage information
+
 ```
 
 ## Input config
@@ -83,17 +85,43 @@ See below an example for options values :
 ```json
 {
     "jpegQuality": 0.9,
-     "video": {
-        "bitrate": 4000,
-        "framerate": 25,
-        "formats": ["mp4", "webm", "ogv"]
-    },
+    "framerate": 25,
+    "layouts": [
+        {
+            "name": "hd",
+            "video": {
+                "bitrate": 5000,
+                "formats": [
+                    "mp4",
+                    "webm"
+                ]
+            },
+            "layout": {
+                "width": 1920,
+                "height": 1080
+            }
+        },
+        {
+            "name": "ld",
+            "video": {
+                "bitrate": 800,
+                "formats": [
+                    "mp4",
+                    "webm"
+                ]
+            },
+            "layout": {
+                "width": 480,
+                "height": 270
+            }
+        }
+    ],
     "carousel": {
         "src": "carousel"
     },
     "turnAround": {
         "src": "turn-around",
-        "numFrames": 400
+        "numFrames": 300
     },
     "buildings": [
         {
@@ -109,23 +137,21 @@ See below an example for options values :
 ```txt
 
 - assets
-    - a
-        in.m4v
-        out.m4v
+    -hd
+        - a
+            in.mp4
+            out.mp4
+            main.jpg
+        - b ...
+        - carousel
+            img1.jpg ...
+        - main-turn-around
+            - frames
+                frame1.jpg ...
+            frames.json
         main.jpg
-    - a-bis
-    - b
-    - c
-    - carousel
-        img1.jpg
-        ...
-    - main-turn-around
-        - frames
-            frame1.jpg
-            ...
-        frames.json
+    -md ...
     config.json
-    main.jpg
 ```
 
 ## Videos
