@@ -1,16 +1,14 @@
-import { VCmd, VideoEncodeType, VideoCodec, VideoEncodeFormat } from "../model/v-cmd";
-import { Observable, Observer, Subject } from "rxjs";
+import { VCmd, EncodeStatusDetail, VideoEncodeType, VideoCodec, VideoEncodeFormat } from "../model/v-cmd";
+import { Observable, Observer } from "rxjs";
 import { exec, spawn } from "child_process";
 export class VideoEncoder {
 
-    public events: Subject<VCmd> = new Subject<VCmd>()
-
     encode(
         src: string, dst: string,
-        format: VideoEncodeType, 
+        format: VideoEncodeType,
         bitrate: number, framerate: number,
-        width: number, height: number): Observable<boolean> {
-        return Observable.create((observer: Observer<boolean>) => {
+        width: number, height: number): Observable<VCmd> {
+        return Observable.create((observer: Observer<VCmd>) => {
             let v: VideoEncodeFormat = "av_mp4"
             let fv: string = ""
             let ev: VideoCodec
@@ -38,23 +36,35 @@ export class VideoEncoder {
                 status: "start",
                 filename: dst
             }
-            this.events.next(cmd)
+            observer.next(cmd)
             let cp = exec(cmdstr, (e, se, so) => {
 
                 if (e) {
                     cmd.status = "error"
-                    this.events.next(cmd)
                     return observer.error(e)
                 }
                 cmd.status = "done"
-                this.events.next(cmd)
-                observer.next(true)
+                observer.next(cmd)
                 observer.complete()
             })
-
-            cp.on("message", (message, sendHandle) => {
-                console.log(String(message))
-            })
+            if (cp.stdout) {
+                const taskRe: RegExp = /task (\d+)\s+of\s+(\d+)/m
+                const percentRe: RegExp = /(\d*)(\.?)(\d*)\s*%/m
+                const status: EncodeStatusDetail = {}
+                cmd.status = status
+                cp.stdout.addListener("data", data => {
+                    let m: string[]
+                    const str = data.toString()
+                    if (taskRe.test(str) && percentRe.test(str)) {
+                        m = taskRe.exec(str)
+                        status.pass = Number(m[1])
+                        status.total = Number(m[2])
+                        m = percentRe.exec(str)
+                        status.percent = Number(m[1] + "." + m[3])
+                        observer.next(cmd)
+                    }
+                })
+            }
         })
     }
 }

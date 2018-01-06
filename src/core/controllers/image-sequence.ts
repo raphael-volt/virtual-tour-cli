@@ -1,96 +1,196 @@
 import { red, yellow } from "../../utils/log-util";
-import { IExec, CLIEvent } from "./i-exec";
-import { VCmd, VideoEncodeType, VideoCodec, VideoEncodeFormat } from "../model/v-cmd";
+import { exec } from "child_process";
+import { VCmd, EncodeStatusDetail, VideoEncodeType, VideoCodec, VideoEncodeFormat } from "../model/v-cmd";
 import { IMGSequenceCmd } from "../model/img-sequence-cmd";
-import { Observable, Observer, Subject } from "rxjs";
+import { Observable, Observer } from "rxjs";
 import { join, extname } from "path";
-import { readdir, exists, unlink } from "fs-extra";
-export class ImageSequence extends IExec {
-    
-    events: Subject<IMGSequenceCmd> = new Subject<IMGSequenceCmd>()
-    
-    encode(
+import { readdir, exists, unlink, mkdirp, copy, remove } from "fs-extra";
+export class ImageSequence {
+
+    reverse(
+        cmd: IMGSequenceCmd, srcDir: string, destDir: string,
+        videoName: string,
+        w: number, h: number, framerate: number,
+        vcodec: "h264" | "libx264"): Observable<IMGSequenceCmd> {
+
+        return Observable.create((obs: Observer<IMGSequenceCmd>) => {
+
+            cmd.status = "start"
+            cmd.filename = join(destDir, videoName)
+            obs.next(cmd)
+
+            const _tmdDirname: string = ".tmp"
+            const _tmpPath: string = join(destDir, _tmdDirname)
+            const _reversedPath: string = join(destDir, videoName)
+            let i: number = 1
+            const _oldCwd: string = process.cwd()
+            let dirChanged: boolean = false
+            const execError = (err?) => {
+                if (!err)
+                    return false
+                if (dirChanged)
+                    process.chdir(_oldCwd)
+                dirChanged = false
+                cmd.status = "error"
+                obs.error(cmd)
+                return true
+            }
+
+            mkdirp(_tmpPath)
+                .then(() => {
+                    process.chdir(_tmpPath)
+                    dirChanged = true
+                    let files: string[] = cmd.files.slice()
+                    let iArg: string = cmd.prefix + "%0" + cmd.numInt + "d." + cmd.imgExt
+                    let cp = () => {
+                        if (files.length) {
+                            let src = join(srcDir, files.pop())
+                            let dst: string = i.toString()
+                            for (let j = dst.length; j < cmd.numInt; j++) {
+                                dst = "0" + dst
+                            }
+                            dst = cmd.prefix + dst + "." + cmd.imgExt
+                            copy(src, dst)
+                                .then(() => {
+                                    i++
+                                    cp()
+                                }).catch(execError)
+                        }
+                        else {
+                            cmd.i = iArg
+                            cmd.start_number = 1
+                            let args = this.imgSeqCmdArgs(cmd, cmd.filename, vcodec, NaN, 1)
+
+                            let done = (err?) => {
+                                remove(_tmpPath)
+                                    .then(() => {
+                                        if (execError(err))
+                                            return
+                                        if (dirChanged)
+                                            process.chdir(_oldCwd)
+                                        dirChanged = false
+                                        cmd.status = "done"
+                                        obs.next(cmd)
+                                        obs.complete()
+                                    })
+                            }
+                            const saveSubDone = (err?) => {
+                                saveSub.unsubscribe()
+                                done(err)
+                            }
+                            let saveSub = this.saveSequence(cmd, args, w, h, framerate, vcodec)
+                                .subscribe(cmd => {
+                                    if (cmd.status == "done")
+                                        return
+                                    obs.next(cmd)
+                                }, saveSubDone, saveSubDone
+                                )
+                        }
+                    }
+                    cp()
+                })
+        })
+
+
+    }
+
+    generate(
         srcDir: string, destDir: string,
         videoName: string,
-        w: number, h: number, framerate: number, bitrate: number,
+        w: number, h: number, framerate: number,
         vcodec: "h264" | "libx264"
-    ) {
-        
-        let cmd: IMGSequenceCmd = {
-            name: "ffmpeg",
-            status: "start",
-            filename: join(destDir, videoName)
-        }
-        this.notify(cmd)
-        let start = () => {
-            this.getCommand(srcDir, cmd)
+    ): Observable<IMGSequenceCmd> {
+
+        return Observable.create((_o: Observer<IMGSequenceCmd>) => {
+            let cmd: IMGSequenceCmd = {
+                name: "ffmpeg",
+                status: "start",
+                filename: join(destDir, videoName)
+            }
+            _o.next(cmd)
+            let cmdDone = (err?) => {
+                sub.unsubscribe()
+                if (err)
+                    return _o.error(err)
+            }
+            let sub = this.getCommand(srcDir, cmd)
                 .subscribe(c => {
                     cmd = c
                     cmd.s = w + "x" + h
                     cmd.framerate = framerate
                     cmd.vcodec = vcodec
-                    cmd.status = "pass1"
                     cmd.format = "mp4"
-                    this.notify(cmd)
-                    let args = this.imgSeqCmdArgs(cmd, cmd.filename, vcodec, bitrate)
-                    let _closed = false
-                    let _exit = false
-                   
-                    this.spawn(cmd.name, args)
-                        .subscribe(event => {
-                            console.log(event.event, event.code, event.signal)
-                            switch (event.event) {
-                                case "close": {
-                                    _closed = true
-                                    break
-                                }
-                                case "exit": {
-                                    _exit = true
-                                    break
-                                }
-                                case "message": {
-                                    console.log("[MESSAGE]")
-                                    console.log(event)
-                                    break
-                                }
-                                
-                                case "data": {
-                                    console.log("[DATA]")
-                                    console.log(event.data)
-                                    break
-                                }
+                    let args = this.imgSeqCmdArgs(cmd, cmd.filename, vcodec, NaN, 1)
 
-                            }
-                            if (_closed && _exit) {
-                                cmd.status = "done"
-                                this.notify(cmd)
-                            }
-                        },
-                        err => {
-                            cmd.status = "error"
-                            this.notify(cmd)
-                        })
-                })
-        }
-        exists(cmd.filename, e => {
-            if (e)
-                unlink(cmd.filename)
-                    .then(start)
-            else
-                start()
+                    let done = (err?) => {
+                        if (err)
+                            return _o.error(err)
+
+                        _o.complete()
+                    }
+                    const saveSubDone = (err?) => {
+                        saveSub.unsubscribe()
+                        done(err)
+                    }
+                    let saveSub = this.saveSequence(cmd, args, w, h, framerate, vcodec)
+                        .subscribe(cmd => {
+                            _o.next(cmd)
+                        }, saveSubDone, saveSubDone)
+                }, cmdDone, cmdDone)
         })
 
     }
 
-    private imgSeqCmdArgs(cmd: IMGSequenceCmd, path: string, vcodec: string, bitrate: number = NaN): string[] {
+    private saveSequence(cmd: VCmd, args: string[],
+        w: number, h: number, framerate: number, vcodec: string): Observable<IMGSequenceCmd> {
+
+        return Observable.create((_o: Observer<IMGSequenceCmd>) => {
+            const status: EncodeStatusDetail = { pass: 1, total: 2, percent: 0 }
+            cmd.status = status
+            status.pass = 1
+            status.total = 2
+            status.percent = 0
+            _o.next(cmd)
+            exec(cmd.name + " " + args.join(" "), (err, stdo, stde) => {
+                if (err)
+                    return _o.error(err)
+                status.pass = 2
+                _o.next(cmd)
+                args = this.imgSeqCmdArgs(cmd, cmd.filename, vcodec, this.getPreferedBitrate(w, h, framerate), 2)
+                exec(cmd.name + " " + args.join(" "),
+                    (err, stdo, stde) => {
+                        if (err)
+                            return _o.error(err)
+                        cmd.status = "done"
+                        _o.next(cmd)
+                        _o.complete()
+                    }
+                )
+            })
+        })
+    }
+
+    getPreferedBitrate(width: number, height: number, framerate: number): number {
+        // w * h * f * r = 1420
+        return Math.round(.000275463 * width * height * framerate)
+    }
+
+    private imgSeqCmdArgs(cmd: IMGSequenceCmd, path: string, vcodec: string, bitrate: number = NaN, pass: number = 0): string[] {
         let args: string[] = [
+            "-y",
             "-start_number", String(cmd.start_number),
             "-i", cmd.i,
             "-s", cmd.s,
             "-vcodec", vcodec
         ]
         if (!isNaN(bitrate))
-            args.push("-b:v", String(bitrate))
+            args.push("-b:v", String(bitrate) + "k")
+        if (pass > 0)
+            args.push("-pass", String(pass))
+        if (pass == 1) {
+            path = "/dev/null"
+            args.push("-f", "mp4")
+        }
         args.push(
             "-an",
             "-framerate", String(cmd.framerate),
@@ -99,9 +199,6 @@ export class ImageSequence extends IExec {
         return args
     }
 
-    private notify(cmd) {
-        this.events.next(cmd)
-    }
 
     private getCommand(inputDir: string, cmd: IMGSequenceCmd): Observable<IMGSequenceCmd> {
         return Observable.create((observer: Observer<IMGSequenceCmd>) => {
