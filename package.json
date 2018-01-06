@@ -12,7 +12,9 @@
         "build": "npm run clean && tsc --pretty",
         "test": "npm run build && mocha --timeout 0 --compilers ts:ts-node/register --recursive test/**/*.ts",
         "watch:build": "nodemon --config nodemon.json --exec npm run build",
-        "watch:test": "nodemon --config nodemon.json --exec npm run test"
+        "watch:test": "nodemon --config nodemon.json --exec npm run test",
+        "log": "node dist/log-test.js",
+        "watch:log": "nodemon --config nodemon.json --exec npm run log"
     },
     "author": {
         "name": "raphael-volt",
@@ -21,7 +23,7 @@
     "main": "dist/app.js",
     "typings": "dist/app.d.ts",
     "bin": {
-        "vti": "bin/vti"
+        "vtt": "bin/vtt"
     },
     "files": [
         "bin",
